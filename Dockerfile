@@ -26,10 +26,10 @@ COPY *.ipynb ./notebooks/
 EXPOSE 8888
 
 # Notebook working dir = /app/notebooks, so Path(cwd).parent = /app, and /app/src exists
-CMD ["jupyter", "lab", \
-     "--ip=0.0.0.0", \
-     "--port=8888", \
-     "--no-browser", \
-     "--allow-root", \
-     "--NotebookApp.token=${JUPYTER_TOKEN:-}", \
-     "--ServerApp.root_dir=/app"]
+CMD jupyter lab \
+    --ip=0.0.0.0 \
+    --port=8888 \
+    --no-browser \
+    --allow-root \
+    --ServerApp.token="${JUPYTER_TOKEN:-}" \
+    --ServerApp.root_dir=/app
