@@ -19,14 +19,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project source code
 COPY src/ ./src/
 
-# Copy notebooks
-COPY notebooks/ ./notebooks/
+# Copy notebooks into subdirectory so ../src resolves to /app/src
+COPY *.ipynb ./notebooks/
 
 # Expose JupyterLab port
 EXPOSE 8888
 
-# Run JupyterLab - accessible from any host, no token for simplicity
-# Override token via environment variable JUPYTER_TOKEN for production
+# Notebook working dir = /app/notebooks, so Path(cwd).parent = /app, and /app/src exists
 CMD ["jupyter", "lab", \
      "--ip=0.0.0.0", \
      "--port=8888", \
