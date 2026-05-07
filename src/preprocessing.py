@@ -15,7 +15,7 @@ import pandas as pd
 
 # Manual Label Encoding Mappings (Hardcoded untuk konsistensi)
 LABEL_ENCODINGS = {
-    "Kategori Usia": {"Usia Produktif": 0, "Usia Lanjut": 1},
+    "Usia": {"Usia Produktif": 0, "Usia Lanjut": 1},
     "Jenis Kelamin": {"Laki-Laki": 0, "Laki-laki": 0, "Perempuan": 1},
     "Status Bekerja": {"Tidak Bekerja": 0, "Bekerja": 1},
     "Status Gizi": {"Gizi Kurang": 0, "Gizi Normal": 1, "Gizi Lebih": 2},
@@ -49,9 +49,9 @@ class DataPreprocessor:
     def __init__(self):
         self.label_encoders = LABEL_ENCODINGS
         self.label_decoders = LABEL_DECODINGS
-        self.numerical_cols = []
+        self.numerical_cols = ["Ket.Usia", "BB", "TB", "IMT"]
         self.categorical_cols = [
-            "Kategori Usia",
+            "Usia",
             "Jenis Kelamin",
             "Status Bekerja",
             "Status Gizi",
@@ -96,11 +96,35 @@ class DataPreprocessor:
     def feature_engineering(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Feature Engineering:
-        - Saat ini tidak ada feature engineering tambahan.
-        - Fitur numerik (BB, TB, IMT, Ket.Usia) sudah dihapus
-          agar konsisten dengan fitur yang digunakan di web.
+        - Menghitung IMT dari BB dan TB jika belum ada / perlu dihitung ulang
+          IMT = BB / (TB/100)^2
+
+        CATATAN KONSISTENSI:
+        BB & TB di-cast ke integer (mengikuti perilaku notebook disertasi)
+        agar hasil IMT 100% bit-identical antara web (Laravel+Flask) dan notebook.
+        Laravel menyimpan BB/TB sebagai FLOAT di MySQL, namun input medis selalu
+        bilangan bulat (kg / cm), sehingga koersi ke int aman & deterministik.
         """
-        return df.copy()
+        df_fe = df.copy()
+
+        if "BB" in df_fe.columns and "TB" in df_fe.columns:
+            # Konversi ke numeric dulu (handle string/None)
+            df_fe["BB"] = pd.to_numeric(df_fe["BB"], errors="coerce")
+            df_fe["TB"] = pd.to_numeric(df_fe["TB"], errors="coerce")
+            # Drop baris dengan BB/TB NaN sebelum cast ke int
+            df_fe = df_fe.dropna(subset=["BB", "TB"]).reset_index(drop=True)
+            # Cast ke int untuk konsistensi dengan notebook (astype(int))
+            df_fe["BB"] = df_fe["BB"].astype(int)
+            df_fe["TB"] = df_fe["TB"].astype(int)
+            # Hitung IMT: BB / (TB dalam meter)^2
+            tb_meter = df_fe["TB"] / 100
+            df_fe["IMT"] = df_fe["BB"] / (tb_meter**2)
+            df_fe["IMT"] = df_fe["IMT"].round(2)
+            print(
+                f"Feature Engineering: IMT dihitung dari BB dan TB ({len(df_fe)} records)"
+            )
+
+        return df_fe
 
     def remove_outliers(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -200,9 +224,12 @@ class DataPreprocessor:
         """
         # Mapping dari snake_case (frontend) ke format asli
         field_mapping = {
-            "kategori_usia": "Kategori Usia",
+            "usia": "Usia",
+            "ket_usia": "Ket.Usia",
             "jenis_kelamin": "Jenis Kelamin",
             "status_bekerja": "Status Bekerja",
+            "bb": "BB",
+            "tb": "TB",
             "status_gizi": "Status Gizi",
             "status_merokok": "Status Merokok",
             "pemeriksaan_kontak": "Pemeriksaan Kontak",
@@ -220,7 +247,14 @@ class DataPreprocessor:
         for key, value in input_data.items():
             mapped_key = field_mapping.get(key, key)
 
-            if mapped_key in self.label_encoders:
+            # Konversi numerik
+            if mapped_key in ["Ket.Usia", "BB", "TB"]:
+                try:
+                    encoded_data[mapped_key] = float(value)
+                except (ValueError, TypeError):
+                    encoded_data[mapped_key] = 0
+            # Encode kategorikal
+            elif mapped_key in self.label_encoders:
                 if isinstance(value, int) or (
                     isinstance(value, str) and value.isdigit()
                 ):
@@ -235,6 +269,19 @@ class DataPreprocessor:
                     encoded_data[mapped_key] = self.encode_value(mapped_key, str(value))
             else:
                 encoded_data[mapped_key] = value
+
+        # Feature Engineering: Hitung IMT dari BB dan TB
+        if "BB" in encoded_data and "TB" in encoded_data:
+            bb = encoded_data["BB"]
+            tb = encoded_data["TB"]
+            if tb > 0:
+                tb_meter = tb / 100
+                encoded_data["IMT"] = round(bb / (tb_meter**2), 2)
+            else:
+                encoded_data["IMT"] = 0
+            print(
+                f"Feature Engineering: IMT = {encoded_data['IMT']} (BB={bb}, TB={tb})"
+            )
 
         df = pd.DataFrame([encoded_data])
 
@@ -265,7 +312,7 @@ if __name__ == "__main__":
     # Test single encoding
     print("\n=== Test Single Encoding ===")
     test_cases = [
-        ("Kategori Usia", "Usia Produktif"),
+        ("Usia", "Usia Produktif"),
         ("Jenis Kelamin", "Laki-Laki"),
         ("Status Gizi", "Gizi Normal"),
         ("Keberhasilan Pengobatan", "Berhasil"),
