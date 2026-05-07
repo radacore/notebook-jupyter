@@ -1,0 +1,29 @@
+services:
+  jupyter:
+    build: .
+    container_name: mdr-tb-notebooks
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-changeme}
+      - DB_HOST=simoka_db
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=Root_PDI-P_Admin_Secure!
+      - DB_NAME=mdr_prediction
+    volumes:
+      - ./notebooks:/app/notebooks
+      - ./src:/app/src
+      - ./figures:/app/notebooks/figures
+    networks:
+      - simoka_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+networks:
+  simoka_network:
+    external: true
+    name: pdipsulsel_simoka_network
